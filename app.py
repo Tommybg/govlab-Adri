@@ -4,7 +4,7 @@ import pandas as pd
 from dotenv import load_dotenv 
 from html_template_1 import css, bot_template, user_template,logo
 from langchain_openai  import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader
