@@ -4,7 +4,8 @@ numpy
 python-dotenv
 chromadb
 langchain
-langchain-core
+langchain-core 
+langchain-openai
 openai
 docx2txt
 PyPDF2
