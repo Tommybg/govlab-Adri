@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+python-dotenv
+chromadb
+langchain
+langchain-core
+openai
+docx2txt
+PyPDF2
