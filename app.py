@@ -89,7 +89,6 @@ def load_vector_store():
     except Exception as e:
         st.error(f"Error al cargar el vector store de Chroma: {e}")
         return None
-return None
 
 def update_embeddings_chroma(chunks, vector_store):
     embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
