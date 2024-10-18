@@ -30,22 +30,6 @@ def clear_chat_history():
     st.session_state.messages = []
     st.success("Historial de chat y memoria borrados!")
 
-# Create UPLOADED FILES folder 
-documents_folder = './documents'
-os.makedirs(documents_folder, exist_ok=True)
-
-# Function to generate a unique CSV filename
-def get_unique_filename(base_name, extension, folder):
-    counter = 0
-    new_filename = f"{base_name}{extension}"
-    
-    # Keep incrementing the counter until a unique filename is found
-    while os.path.exists(os.path.join(folder, new_filename)):
-        counter += 1
-        new_filename = f"{base_name}_{counter}{extension}"
-    
-    return os.path.join(folder, new_filename)
-
 # Function to load document
 @st.cache_data
 def load_document(file):
@@ -59,19 +43,6 @@ def load_document(file):
         loader = TextLoader(file)
     elif extension.lower() == '.csv':
         loader = CSVLoader(file) 
-    elif extension.lower() == ".xlsx":  
-        # Convert Excel to CSV
-        excel_data = pd.read_excel(file, engine='openpyxl')
-        
-        # Get a unique filename for the CSV
-        base_name = os.path.splitext(os.path.basename(file))[0]
-        file_csv = get_unique_filename(base_name, ".csv", documents_folder)
-        
-        # Save Excel data as a unique CSV file
-        excel_data.to_csv(file_csv, index=False)  # Save without the index
-        
-        # Load the newly created CSV file using CSVLoader
-        loader = CSVLoader(file_csv)
     else:
         st.error('Formato de documento no soportado!')
         return None
@@ -319,7 +290,6 @@ with st.sidebar:
         with st.spinner("Procesando sus Documentos..."):
             for i, uploaded_file in enumerate(uploaded_files):
                 bytes_data = uploaded_file.read()
-                file_name = os.path.join(documents_folder, uploaded_file.name)
 
                 with open(file_name, "wb") as f:
                     f.write(bytes_data)
