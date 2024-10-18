@@ -93,44 +93,42 @@ def chunk_data(docs, chunk_size=500, chunk_overlap=50):
     return chunks
 
 # Function to create embeddings and Chroma DB 
-def create_embeddings_chroma(chunks, nombre_coleccion = "planes-de-desarrollo"):
+def create_embeddings_chroma(chunks):
     embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
     try:
         # Initialize Chroma with persistence
         vector_store = Chroma.from_documents(chunks, 
                                              embeddings, 
-                                             persist_directory="./chroma_RAG_db", 
-                                             collection_name= nombre_coleccion
+                                             persist_directory=None, 
+                                             in_memory= True
                                              )
-        vector_store.persist()  # Save the vector store to disk
         return vector_store
     except Exception as e:
         st.error(f"Error al crear el vector store de Chroma: {e}")
         return None
 
 # Load existing vector store if it exists
-def load_vector_store(nombre_coleccion = "planes-de-desarrollo"):
-    if os.path.exists("./chroma_RAG_db"):
-        try:
-            embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
-            vector_store = Chroma(persist_directory="./chroma_RAG_db",
-                                   embedding_function=embeddings, 
-                                   collection_name= nombre_coleccion)
-            return vector_store
-        except Exception as e:
-            st.error(f"Error al cargar el vector store de Chroma: {e}")
-            return None
-    return None
+def load_vector_store():
+    try:
+        embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
+        vector_store = Chroma(persist_directory=None,
+                               embedding_function=embeddings, 
+                               in_memory= True)
+        return vector_store
+    except Exception as e:
+        st.error(f"Error al cargar el vector store de Chroma: {e}")
+        return None
+return None
 
-def update_embeddings_chroma(chunks, vector_store, nombre_coleccion = "planes-de-desarrollo"):
+def update_embeddings_chroma(chunks, vector_store):
     embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
     if vector_store:
         vector_store.add_documents(chunks)  # Append new documents
     else:
         vector_store = Chroma.from_documents(chunks, 
                                              embeddings, 
-                                             persist_directory="./chroma_RAG_db", 
-                                             collection_name= nombre_coleccion)
+                                             persist_directory=None, 
+                                             in_memory= True)
     vector_store.persist()
     return vector_store
 
