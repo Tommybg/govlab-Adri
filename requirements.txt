@@ -5,7 +5,8 @@ python-dotenv
 chromadb
 langchain
 langchain-core 
-langchain-openai
+langchain-openai 
+langchain-text-splitters
 openai
 docx2txt
 PyPDF2
