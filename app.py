@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from html_template_1 import css, bot_template, user_template,logo
 from langchain_openai  import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader
 from langchain.schema import HumanMessage, SystemMessage
