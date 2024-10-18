@@ -3,7 +3,7 @@ import os
 import pandas as pd 
 from dotenv import load_dotenv 
 from html_template_1 import css, bot_template, user_template,logo
-from langchain.chat_models import ChatOpenAI 
+from langchain_openai  import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
