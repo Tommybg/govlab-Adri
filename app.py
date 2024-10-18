@@ -279,21 +279,21 @@ with st.sidebar:
     # Boton para procesar los documentos y subirlos a la chroma db
     add_data = st.button("Cargar Documentos")
     
-   if uploaded_files and add_data:
-    all_chunks = []  # To store all chunks from multiple documents
-    with st.spinner("Procesando sus Documentos..."):
-        for i, uploaded_file in enumerate(uploaded_files):
-            # Directly read the uploaded file's bytes data
-            bytes_data = uploaded_file.read()
+    if uploaded_files and add_data:
+        all_chunks = []  # To store all chunks from multiple documents
+        with st.spinner("Procesando sus Documentos..."):
+            for i, uploaded_file in enumerate(uploaded_files):
+                # Directly read the uploaded file's bytes data
+                bytes_data = uploaded_file.read()
+                
+                # You don't need to write to a local file, pass the in-memory bytes directly
+                docs = load_document(bytes_data)  # Assuming load_document can accept bytes data
+                if docs:
+                    chunks = chunk_data(docs)  # Chunk the document data
+                    all_chunks.extend(chunks)  # Accumulate chunks from each document
             
-            # You don't need to write to a local file, pass the in-memory bytes directly
-            docs = load_document(bytes_data)  # Assuming load_document can accept bytes data
-            if docs:
-                chunks = chunk_data(docs)  # Chunk the document data
-                all_chunks.extend(chunks)  # Accumulate chunks from each document
-        
-        # Create embeddings from all chunks
-        vector_store = create_embeddings_chroma(all_chunks)
+            # Create embeddings from all chunks
+            vector_store = create_embeddings_chroma(all_chunks)
 
 
             if vector_store:
