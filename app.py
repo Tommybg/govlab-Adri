@@ -1,20 +1,15 @@
 import streamlit as st 
 import os 
 import pandas as pd 
-import numpy as np 
 from dotenv import load_dotenv 
 from html_template_1 import css, bot_template, user_template,logo
 from langchain_openai import ChatOpenAI
-from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
-from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader, UnstructuredExcelLoader
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough 
+from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.callbacks.base import BaseCallbackHandler
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -285,7 +280,7 @@ def generate_response(q, model_choice):
 
 
         retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
-        relevant_docs = retriever.get_relevant_documents(q)
+        relevant_docs = retriever.invoke(q)  # Use invoke instead of get_relevant_documents
         context = format_docs(relevant_docs)
 
         # Include previous messages in the context
@@ -294,7 +289,7 @@ def generate_response(q, model_choice):
             HumanMessage(content=f"{context}\n\nQuestion: {q}\nAnswer:")
         ] + [HumanMessage(content=msg["content"]) for msg in st.session_state.messages]
 
-        response = chat_model(messages)
+        response = chat_model.invoke(messages)  # Use invoke instead of __call__
         return stream_handler.text  # Return the full streamed text
 
     except Exception as e:
@@ -373,6 +368,3 @@ if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
     with st.chat_message("Adri"):
         full_response = generate_response(prompt, model_choice)
         st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-
-print()
