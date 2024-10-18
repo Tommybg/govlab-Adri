@@ -7,7 +7,8 @@ langchain
 langchain-core 
 langchain-openai 
 langchain-text-splitters
-langchain-chroma
+langchain-chroma 
+langchain-community
 openai
 docx2txt
 PyPDF2
