@@ -70,9 +70,7 @@ def create_embeddings_chroma(chunks):
         # Initialize Chroma with persistence
         vector_store = Chroma.from_documents(chunks, 
                                              embeddings, 
-                                             persist_directory=None, 
-                                             in_memory= True
-                                             )
+                                             persist_directory=None)
         return vector_store
     except Exception as e:
         st.error(f"Error al crear el vector store de Chroma: {e}")
@@ -83,8 +81,7 @@ def load_vector_store():
     try:
         embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
         vector_store = Chroma(persist_directory=None,
-                               embedding_function=embeddings, 
-                               in_memory= True)
+                               embedding_function=embeddings)
         return vector_store
     except Exception as e:
         st.error(f"Error al cargar el vector store de Chroma: {e}")
@@ -97,9 +94,7 @@ def update_embeddings_chroma(chunks, vector_store):
     else:
         vector_store = Chroma.from_documents(chunks, 
                                              embeddings, 
-                                             persist_directory=None, 
-                                             in_memory= True)
-    vector_store.persist()
+                                             persist_directory=None)
     return vector_store
 
 
