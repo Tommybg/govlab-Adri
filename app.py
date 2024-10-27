@@ -1,114 +1,205 @@
-import streamlit as st 
-import os 
-import pandas as pd 
-from dotenv import load_dotenv 
-from html_template_1 import css, bot_template, user_template,logo
-from langchain_openai  import ChatOpenAI
-from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader
-from langchain.schema import HumanMessage, SystemMessage
+import streamlit as st
+import os
+from dotenv import load_dotenv
+from html_template_1 import css, bot_template, user_template, logo
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_pinecone import PineconeVectorStore
+from langchain.document_loaders import CSVLoader, PyPDFLoader, Docx2txtLoader, TextLoader
+from pinecone import Pinecone, ServerlessSpec
 from langchain.callbacks.base import BaseCallbackHandler
-# Load environment variables from .env file
+from langchain.schema import HumanMessage, SystemMessage
+
+system_prompt = """
+Eres Adri, un asistente de IA avanzado diseñado para la división GovLab de la Universidad de la Sabana. Tu objetivo principal es identificar oportunidades de consultoría basadas exclusivamente en los documentos proporcionados, generar ideas y estrategias de valor para implementarlas. 
+
+Instrucciones:
+
+Utiliza únicamente la información de los siguientes documentos para responder a la consulta:
+<documentos>
+{context}
+</documentos>
+
+2. El query al que debes responder es:
+<query>
+{query}
+</query>
+
+3. Analiza los documentos e identifica potenciales oportunidades de consultoría alineadas con las áreas de experiencia de la Universidad de La Sabana, las cuales son:
+[
+    "Hidrógeno y transición energética",
+    "Gestión y gobierno TI",
+    "Gestión y mejora de procesos",
+    "Huella de carbono y emisiones",
+    "Seguridad y salud en el trabajo",
+    "Innovación",
+    "Cargas laborales",
+    "Estudios de vida útil",
+    "Prototipado",
+    "Valoración y diseño de productos",
+    "Modelos de negocio",
+    "Productividad",
+    "Excelencia operativa",
+    "Mejora continua, Lean Manufacturing y Kaizen",
+    "Logística urbana, de salud y humanitaria",
+    "Logística de abastecimiento, distribución y transporte",
+    "Control de procesos",
+    "Machine Learning",
+    "Modelos de riesgo",
+    "Factibilidad técnica, económica, ambiental",
+    "Gestión estratégica",
+    "Arquitectura de software",
+    "Cultura ágil",
+    "Ciencia de datos y analítica",
+    "Liderazgo y power skills",
+    "Servicio al cliente",
+    "Competencias",
+    "Gestión de proyectos",
+    "Sistemas de información geográfica",
+    "Sistemas de producción y gestión",
+    "Simulación y robótica",
+    "Sistemas de manufactura",
+    "Inocuidad y seguridad alimentaria",
+    "Caracterización y tratamiento de aguas",
+    "Planificación territorial y urbana",
+    "Movilidad urbana",
+    "Biocompatibilidad de materiales",
+    "Planeación y programación de producción",
+    "Sistemas de gestión de calidad",
+    "Inteligencia artificial",
+    "Internet de las cosas",
+    "Big Data",
+    "Seguridad informática",
+    "Control y automatización industrial"
+]
+
+4. Al responder:
+- Asegúrate de seguir rigurosamente la información contenida en los documentos proporcionados. Al responder, menciona proyectos específicos relacionados con el para ofrecer ideas concretas y ejecutables, evitando generalidades. Proporciona múltiples propuestas que se puedan implementar.
+- Si la información no está en los documentos, di "No tengo suficiente información para responder eso basado en los documentos proporcionados." No hagas suposiciones ni uses conocimientos externos.
+- Si se te pregunta sobre una sección o página específica, proporciona esa información si está disponible.
+- Si se te pregunta quién eres, responde "Soy Adri, tu IA para estar un paso adelante e identificar oportunidades de consultoría en entidades territoriales, pero todavia no respondas con oprtunidades de consultoria.s" 
+
+5. Organiza tu respuesta de manera clara y concisa, proporcionando resúmenes ejecutivos cuando sea necesario.
+
+6. Maintain a professional and constructive tone throughout the interaction.
+
+Mantén un tono profesional y constructivo durante toda la interacción.
+
+Ahora, por favor proporciona tu respuesta basándote únicamente en la información de los documentos y la consulta dada.
+"""
+
+# Load environment variables
 load_dotenv()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
-if API_KEY is None:
-    raise ValueError("OPENAI_API_KEY not found in environment variables")
+PINE_KEY = os.getenv("PINECONE_API_KEY")
 
-# Initialize vector_store in session state
+# Initialize Pinecone
+pc = Pinecone(PINE_KEY)
+cloud = "aws"
+region = 'us-east-1'
+spec = ServerlessSpec(cloud=cloud, region=region)
+
+# Initialize session state
 if 'vector_store' not in st.session_state:
     st.session_state.vector_store = None
-
-# Initialize chat history in session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Function to clear chat history
-def clear_chat_history():
-    st.session_state.messages = []
-    st.success("Historial de chat y memoria borrados!")
-
-# Function to load document
-@st.cache_data
-def load_document(file):
-    name, extension = os.path.splitext(file)
-
-    if extension.lower() in ['.pdf', '.PDF']:
-        loader = PyPDFLoader(file)
-    elif extension.lower() == '.docx':
-        loader = Docx2txtLoader(file)
-    elif extension.lower() == '.txt':
-        loader = TextLoader(file)
-    elif extension.lower() == '.csv':
-        loader = CSVLoader(file) 
-    else:
-        st.error('Formato de documento no soportado!')
-        return None
-
+# Function to create or get Pinecone index
+def get_or_create_pinecone_index(index_name="oportunidades-consultoria"):
     try:
-        docs = loader.load()
-        if docs is None or len(docs) == 0:
-            st.error("No se pudieron cargar documentos desde el archivo.")
-            return None
-        return docs
+        if index_name not in pc.list_indexes().names():
+            pc.create_index(
+                name=index_name,
+                dimension=1536,  # dimension for text-embedding-3-small
+                spec=spec,
+                metric="cosine"  # Changed to cosine similarity
+            )
+            st.success(f"Created new Pinecone index: {index_name}")
+        return pc.Index(index_name)
     except Exception as e:
-        st.error(f"Error al cargar el documento: {str(e)}")
+        st.error(f"Error with Pinecone index: {str(e)}")
         return None
 
-# Function to chunk data
-def chunk_data(docs, chunk_size=500, chunk_overlap=50):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    chunks = text_splitter.split_documents(docs)
-    return chunks
-
-# Function to create embeddings and Chroma DB 
-def create_embeddings_chroma(chunks):
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
+# Function to initialize vector store
+def initialize_vector_store(index, documents):
     try:
-        # Initialize Chroma with persistence
-        vector_store = Chroma.from_documents(chunks, 
-                                             embeddings, 
-                                             persist_directory=None, 
-                                             tenant="default_tenant")
+        embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
+        
+        # Create text splitter
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=300,
+            chunk_overlap=80,
+            length_function=len,
+            separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
+        )
+        
+        # Split documents into chunks
+        texts = []
+        metadata = []
+        for doc in documents:
+            chunks = text_splitter.split_text(doc.page_content)
+            texts.extend(chunks)
+            metadata.extend([{"source": "document", "text": chunk} for chunk in chunks])
+        
+        # Create vector store
+        vector_store = PineconeVectorStore.from_texts(
+            texts=texts,
+            embedding=embeddings,
+            index_name="oportunidades-consultoria"
+        )
+        
         return vector_store
+    
     except Exception as e:
-        st.error(f"Error al crear el vector store de Chroma: {e}")
+        st.error(f"Error initializing vector store: {str(e)}")
         return None
 
-# Load existing vector store if it exists
-def load_vector_store():
+def process_documents(uploaded_files):
     try:
-        embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
-        vector_store = Chroma(persist_directory=None,
-                               embedding_function=embeddings, 
-                               tenant="default_tenant")
-        return vector_store
+        all_docs = []
+        for uploaded_file in uploaded_files:
+            bytes_data = uploaded_file.read()
+            file_name = os.path.join('./documents/', uploaded_file.name)
+            
+            with open(file_name, "wb") as f:
+                f.write(bytes_data)
+            
+            # Load document based on file type
+            name, extension = os.path.splitext(file_name)
+            if extension.lower() in ['.pdf', '.PDF']:
+                loader = PyPDFLoader(file_name)
+            elif extension.lower() == '.docx':
+                loader = Docx2txtLoader(file_name)
+            elif extension.lower() == '.txt':
+                loader = TextLoader(file_name)
+            elif extension.lower() == '.csv':
+                loader = CSVLoader(file_name)
+            else:
+                st.error(f'Unsupported format: {extension}')
+                continue
+                
+            docs = loader.load()
+            if docs:
+                all_docs.extend(docs)
+        
+        if all_docs:
+            index = get_or_create_pinecone_index()
+            if index:
+                vector_store = initialize_vector_store(index, all_docs)
+                if vector_store:
+                    st.session_state.vector_store = vector_store
+                    st.success("Documents processed successfully!")
+                    return True
+        
+        return False 
+    
     except Exception as e:
-        st.error(f"Error al cargar el vector store de Chroma: {e}")
-        return None
+        st.error(f"Error processing documents: {str(e)}")
+        return False
 
-def update_embeddings_chroma(chunks, vector_store):
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-small', openai_api_key=API_KEY)
-    if vector_store:
-        vector_store.add_documents(chunks)  # Append new documents
-    else:
-        vector_store = Chroma.from_documents(chunks, 
-                                             embeddings, 
-                                             persist_directory=None, 
-                                             tenant="default_tenant")
-    return vector_store
-
-
-# Load the vector store at the start
-st.session_state.vector_store = load_vector_store()
-
-# Function to format documents
-def format_docs(docs):
-    return "\n\n".join(doc.page_content for doc in docs)
-
-# Update the StreamHandler class
+# StreamHandler for streaming responses
 class StreamHandler(BaseCallbackHandler):
     def __init__(self, container, initial_text=""):
         self.container = container
@@ -118,201 +209,96 @@ class StreamHandler(BaseCallbackHandler):
         self.text += token
         self.container.markdown(bot_template.replace("{{MSG}}", self.text), unsafe_allow_html=True)
 
-# Function to truncate messages
-def truncate_messages(max_messages=10):
-    if len(st.session_state.messages) > max_messages:
-        st.session_state.messages = st.session_state.messages[-max_messages:]
-
-# Update the generate_response function
-def generate_response(q, model_choice):
-    if st.session_state.vector_store is None:
-        return "Por favor suba un documento primero."
-
+def generate_response(query, model_choice):
     try:
+        if not st.session_state.vector_store:
+            return "Please upload documents first."
+        
         response_placeholder = st.empty()
         stream_handler = StreamHandler(response_placeholder)
-
-        # Select the model based on user choice
-        if model_choice == "OpenAI":
-            chat_model = ChatOpenAI(
-                model="gpt-4o",  # Update this to the correct model name
-                temperature= temperature_control,
-                api_key=API_KEY,
-                streaming=True,
-                callbacks=[stream_handler]
-            )
-    
-        elif model_choice == "Groq API":
-            # Replace with Groq API model initialization
-            chat_model = None  # Placeholder for Groq API model
-            st.warning("Groq API model is not yet implemented.")
-        elif model_choice == "Claude":
-            # Replace with Claude model initialization
-            chat_model = None  # Placeholder for Claude model
-            st.warning("Claude model is not yet implemented.")
-
-        system_prompt =  """
-    Eres Adri, un asistente de IA avanzado diseñado para la división del GovLab de la Universidad de la Sabana. Tu objetivo principal es identificar y crear oportunidades de consultoría, basándote exclusivamente en los planes de desarrollo proporcionados.
-
-    ## Contexto y Misión
-
-    El GovLab es un laboratorio de innovación de la Universidad de La Sabana dedicado a buscar soluciones a problemas públicos mediante técnicas innovadoras, analítica de datos, co-creación y colaboración intersectorial.
-
-    ## Tus Capacidades y Responsabilidades
-
-    1. **Análisis Basado en Documentos:**
-        - Usa técnicas de RAG (Retrieval-Augmented Generation) para extraer información relevante de los documentos y planes de desarrollo municipales y departamentales proporcionados.
-        - Responde únicamente con hechos basados en los documentos cargados. No hagas suposiciones ni respondas con información fuera de los documentos.
-
-    2. **Identificación de Oportunidades de Consultoría:**
-        - Detecta áreas clave de interés o necesidad en los planes de desarrollo donde el GovLab pueda ofrecer consultoría valiosa.
-        - Las oportunidades de consultoría deben estar alineadas con las siguientes áreas de especialidad de la Universidad de La Sabana:
         
-        ### Áreas de Consultoría de la Universidad de La Sabana:
-        - Hidrógeno y transición energética
-        - Gestión y gobierno TI
-        - Gestión y mejora de procesos
-        - Huella de carbono y emisiones
-        - Seguridad y salud en el trabajo
-        - Innovación
-        - Cargas laborales
-        - Estudios de vida útil
-        - Prototipado
-        - Valoración y diseño de productos
-        - Modelos de negocio
-        - Productividad
-        - Excelencia operativa
-        - Mejora continua, Lean Manufacturing y Kaizen
-        - Logística urbana, de salud y humanitaria
-        - Logística de abastecimiento, distribución y transporte
-        - Control de procesos
-        - Machine Learning
-        - Modelos de riesgo
-        - Factibilidad técnica, económica, ambiental
-        - Gestión estratégica
-        - Arquitectura de software
-        - Cultura ágil
-        - Ciencia de datos y analítica
-        - Liderazgo y power skills
-        - Servicio al cliente
-        - Competencias
-        - Gestión de proyectos
-        - Sistemas de información geográfica
-        - Sistemas de producción y gestión
-        - Simulación y robótica
-        - Sistemas de manufactura
-        - Inocuidad y seguridad alimentaria
-        - Caracterización y tratamiento de aguas
-        - Planificación territorial y urbana
-        - Movilidad urbana
-        - Biocompatibilidad de materiales
-        - Planeación y programación de producción
-        - Sistemas de gestión de calidad
-        - Inteligencia artificial
-        - Internet de las cosas
-        - Big Data
-        - Seguridad informática
-        - Control y automatización industrial
-
-    3. **Generación de Propuestas y Valor:**
-        - Propón estrategias o ideas innovadoras solo cuando estén sustentadas en los hechos del documento.
-        - Si la pregunta requiere más información que no está contenida en el documento o en tu base de conocimientos, indica que no tienes suficiente información, o pide más contexto al usuario para continuar.
-
-    4. **Alineación con el Contexto Gubernamental:**
-        - Verifica que las oportunidades propuestas estén alineadas con los objetivos del gobierno colombiano y con las particularidades de la región de interés.
-
-    ## Directrices de Interacción y Límites
-
-    - **Precisión:** Responde solo con la información basada en el texto del documento. Si no puedes responder de manera precisa basándote en los documentos o en tu base de conocimiento, pide más contexto o informa que no tienes suficiente información en ese momento.
-    - **Identificación de Sección o Página:** Si el usuario te pregunta de qué parte, sección o página del documento obtuviste una información, responde indicando la sección, título o número de página en la medida de lo posible. Si no es posible localizar una parte exacta, proporciona el contexto general o pide más detalles.
-    - **Saludos y Preguntas Generales:** Si el usuario te saluda o pregunta quién eres, responde de forma amable sin devolver una respuesta vacía, sin indicar que no tienes información y tu objetivo principal.
-    - **Solicita Claridad:** Si una pregunta es ambigua o falta información en los documentos proporcionados, solicita aclaraciones o un contexto más amplio antes de generar una respuesta.
-    - **Profesionalismo:** Mantén un tono profesional y constructivo en todas las interacciones.
-    - **Presentación:** Organiza las respuestas de manera clara, concisa y estructurada, proporcionando resúmenes ejecutivos cuando sea necesario, pero basados siempre en los documentos cargados.
-
-    ## Instrucciones Internas (para uso de IA, no visibles para el usuario final):
-
-    1. **DOCUMENT:** (texto del documento utilizado para responder la pregunta)
-    2. **QUESTION:** (pregunta del usuario)
-    3. **ANSWER:** Responde a la pregunta del usuario utilizando solo los datos del DOCUMENT proporcionado. Si no tienes suficiente información para responder, solicita más contexto o explica que no tienes los datos necesarios.
-    4. Si la pregunta es un saludo o una pregunta sobre quién eres, responde de manera corta y menciona tu objetivo principal resumido.
-    5. Si el usuario pregunta de qué sección o página específica del documento proviene la respuesta, busca esa información en el DOCUMENT proporcionado y ofrécele el título de la sección o el número de página. Si no puedes encontrar la sección exacta, solicita más contexto o proporciona una referencia aproximada al documento.
-
-    Nota: No incluyas el encabezado DOCUMENT, QUESTION o INSTRUCTIONS en la respuesta final. El usuario solo debe ver la respuesta sin ningún formato adicional.
-"""
-
-
-
-
-
-        retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
-        relevant_docs = retriever.invoke(q)  # Use invoke instead of get_relevant_documents
-        context = format_docs(relevant_docs)
-
-        # Include previous messages in the context
+        # Use vector store for similarity search
+        relevant_docs = st.session_state.vector_store.similarity_search(
+            query,
+            k=4,  # Number of relevant documents to retrieve
+        )
+        
+        if not relevant_docs:
+            return "No relevant information found in the documents."
+        
+        context = "\n\n".join(doc.page_content for doc in relevant_docs)
+        
+        chat_model = ChatOpenAI(
+            model="gpt-4o",
+            temperature=st.session_state.get('temperature', 0.5),
+            streaming=True,
+            callbacks=[stream_handler]
+        )
+        
+        formatted_system_prompt = system_prompt.format(context=context, query=query)
         messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"{context}\n\nQuestion: {q}\nAnswer:")
-        ] + [HumanMessage(content=msg["content"]) for msg in st.session_state.messages]
-
-        response = chat_model.invoke(messages)  # Use invoke instead of __call__
-        return stream_handler.text  # Return the full streamed text
-
+            SystemMessage(content=formatted_system_prompt),
+            HumanMessage(content=query)
+        ]
+        
+        response = chat_model.invoke(messages)
+        return stream_handler.text
+        
     except Exception as e:
-        st.error(f"Ocurrió un error al generar la respuesta: {str(e)}")
-        import traceback
-        st.error(f"Traceback: {traceback.format_exc()}")
-        return "Lo siento, pero ocurrió un error al procesar su solicitud. Por favor, intente de nuevo o contacte al soporte si el problema persiste."
+        st.error(f"Error generating response: {str(e)}")
+        return "Sorry, an error occurred while processing your request."
 
-# Streamlit UI 
-st.set_page_config(page_title="GOV", layout="centered") 
+# Streamlit UI
+st.set_page_config(page_title="GOV", layout="centered")
 st.markdown(logo, unsafe_allow_html=True)
-st.title("ADRi-a", anchor= False)
-st.markdown("**Buscador de oportunidades de consultoría en los gobiernos locales.**") 
+st.title("ADRi-a")
+st.markdown("**Buscador de oportunidades de consultoría en los gobiernos locales.**")
 
 st.write(css, unsafe_allow_html=True)
 
 # Sidebar
-with st.sidebar: 
-    # Dropdown menu for model selection
-    model_choice = st.selectbox("Selecciona el modelo deseado:", ["OpenAI", "Groq API", "Claude"])
-
-    # Container para subir los documentos 
-    uploaded_files = st.file_uploader("Sube tus documentos ACÁ", type=["pdf", "csv", "txt", "xlsx", "docx"], accept_multiple_files=True)
-    # Boton para procesar los documentos y subirlos a la chroma db
-    add_data = st.button("Cargar Documentos")
+with st.sidebar:
+    model_choice = st.selectbox("Selecciona Modelo", ["OpenAI"])
+    uploaded_files = st.file_uploader(
+        "Sube tus Documentos ACÁ", 
+        type=["pdf", "csv", "txt", "xlsx", "docx"], 
+        accept_multiple_files=True
+    )
     
-    if uploaded_files and add_data:
-        all_chunks = []  # To store all chunks from multiple documents
-        with st.spinner("Procesando sus Documentos..."):
-            for i, uploaded_file in enumerate(uploaded_files):
-                # Directly read the uploaded file's bytes data
-                bytes_data = uploaded_file.read()
-                
-                # You don't need to write to a local file, pass the in-memory bytes directly
-                docs = load_document(bytes_data)  # Assuming load_document can accept bytes data
-                if docs:
-                    chunks = chunk_data(docs)  # Chunk the document data
-                    all_chunks.extend(chunks)  # Accumulate chunks from each document
-            
-            # Create embeddings from all chunks
-            vector_store = create_embeddings_chroma(all_chunks)
-
-
-            if vector_store:
-                st.session_state.vector_store = vector_store
-                st.success("Documento(s) procesado(s) con éxito!")
-            else:
-                st.error("Error en procesar documentos. Por favor intente de nuevo.") 
-
+    # Create documents directory if it doesn't exist
+    documents_dir = './documents/'
+    if not os.path.exists(documents_dir):
+        os.makedirs(documents_dir)
+    
+    # Process documents button
+    if st.button("Cargar Documentos"):
+        if uploaded_files:
+            with st.spinner("Procesando documentos..."):
+                success = process_documents(uploaded_files)
+                if success:
+                    st.success("¡Documentos procesados y listos para consulta!")
+                else:
+                    st.error("Error al procesar los documentos. Por favor, intente nuevamente.")
+        else:
+            st.warning("Por favor, sube algunos documentos primero.")
+    
+    # Chat history clear button
     if st.button("Borrar Historial Chat"):
-        clear_chat_history()
-
-    # Slider para el control de la temperatura por el Usuario 
-    temperature_control = st.slider("Temperatura", min_value= 0.1, max_value= 1.0, value=0.5, step= 0.1)
-    st.caption("""Ajusta la creatividad de las respuestas 
-- Baja Temperatura: más precisas y coherentes. 
-- Alta Temperatura: más creativas y variadas.""")
+        st.session_state.messages = []
+        st.success("¡Historial de chat borrado!")
+    
+    # Temperature control
+    temperature = st.slider(
+        "Temperature", 
+        min_value=0.1, 
+        max_value=1.0, 
+        value=0.5, 
+        step=0.1
+    )
+    st.session_state.temperature = temperature
+    st.caption("""Ajusta la creatividad 
+    - Temperatura Baja: más preciso y consistente. 
+    - Temperatura Alta: más creativo y variado.""")
 
 # Display chat messages
 for message in st.session_state.messages:
@@ -321,16 +307,20 @@ for message in st.session_state.messages:
     else:
         st.write(bot_template.replace("{{MSG}}", message["content"]), unsafe_allow_html=True)
 
-# Chat Input 
+# Chat input
 if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Truncate messages to keep the last N messages
-    truncate_messages(max_messages=10)
-
+    # Limit chat history
+    if len(st.session_state.messages) > 10:
+        st.session_state.messages = st.session_state.messages[-10:]
+    
+    # Display user message
     with st.chat_message("U"):
         st.markdown(user_template.replace("{{MSG}}", prompt), unsafe_allow_html=True)
-
+    
+    # Generate and display assistant response
     with st.chat_message("Adri"):
         full_response = generate_response(prompt, model_choice)
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        if full_response:
+            st.session_state.messages.append({"role": "assistant", "content": full_response}) 
