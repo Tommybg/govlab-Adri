@@ -1,8 +1,8 @@
 streamlit
 pandas
-numpy
 python-dotenv
-chromadb
+pinecone 
+langchain-pinecone
 langchain
 langchain-core 
 langchain-openai 
@@ -13,5 +13,4 @@ openai
 docx2txt
 PyPDF2
 pydantic<2.0 
-protobuf==3.20.3
-
+protobuf==3.20.3 
