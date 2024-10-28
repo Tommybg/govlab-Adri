@@ -212,7 +212,7 @@ class StreamHandler(BaseCallbackHandler):
 def generate_response(query, model_choice):
     try:
         if not st.session_state.vector_store:
-            return "Please upload documents first."
+            return "PorFavor sube un documento primero."
         
         response_placeholder = st.empty()
         stream_handler = StreamHandler(response_placeholder)
