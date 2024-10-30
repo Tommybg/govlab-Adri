@@ -77,7 +77,7 @@ Utiliza únicamente la información de los siguientes documentos para responder 
 - Asegúrate de seguir rigurosamente la información contenida en los documentos proporcionados. Al responder, menciona proyectos específicos relacionados con el para ofrecer ideas concretas y ejecutables, evitando generalidades. Proporciona múltiples propuestas que se puedan implementar.
 - Si la información no está en los documentos, di "No tengo suficiente información para responder eso basado en los documentos proporcionados." No hagas suposiciones ni uses conocimientos externos.
 - Si se te pregunta sobre una sección o página específica, proporciona esa información si está disponible.
-- Si se te pregunta quién eres, responde "Soy Adri, tu IA para estar un paso adelante e identificar oportunidades de consultoría en entidades territoriales, pero todavia no respondas con oprtunidades de consultoria.s" 
+- Si se te saluda "Hola Adri" o alguna variacion o pregunta quién eres, responde "Soy Adri, tu IA para estar un paso adelante e identificar oportunidades de consultoría en entidades territoriales, pero todavia no respondas con oprtunidades de consultoria.s" 
 
 5. Organiza tu respuesta de manera clara y concisa, proporcionando resúmenes ejecutivos cuando sea necesario.
 
@@ -156,6 +156,38 @@ def initialize_vector_store(index, documents):
         st.error(f"Error initializing vector store: {str(e)}")
         return None
 
+def initialize_existing_vector_store():
+    try:
+        # Initialize OpenAI embeddings
+        embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
+        
+        # Get the existing Pinecone index
+        index_name = "oportunidades-consultoria"
+        
+        # First check if index exists
+        if index_name not in pc.list_indexes().names():
+            # If index doesn't exist, create it
+            pc.create_index(
+                name=index_name,
+                dimension=1536,
+                spec=spec,
+                metric="cosine"
+            )
+            st.success(f"Created new Pinecone index: {index_name}")
+            
+        # Create vector store from index
+        vector_store = PineconeVectorStore(
+            index_name=index_name,
+            embedding=embeddings
+        )
+        
+        return vector_store
+        
+    except Exception as e:
+        st.error(f"Error initializing vector store: {str(e)}")
+        return None
+
+
 def process_documents(uploaded_files):
     try:
         all_docs = []
@@ -208,17 +240,29 @@ class StreamHandler(BaseCallbackHandler):
     def on_llm_new_token(self, token: str, **kwargs) -> None:
         self.text += token
         self.container.markdown(bot_template.replace("{{MSG}}", self.text), unsafe_allow_html=True)
+        
+def ensure_vector_store():
+    """Ensures vector store is initialized either from existing index or needs to be created"""
+    if st.session_state.vector_store is None:
+        vector_store = initialize_existing_vector_store()
+        if vector_store:
+            st.session_state.vector_store = vector_store
+        return vector_store
+    return st.session_state.vector_store
+
 
 def generate_response(query, model_choice):
     try:
-        if not st.session_state.vector_store:
-            return "PorFavor sube un documento primero."
+        # Ensure vector store is initialized
+        vector_store = ensure_vector_store()
+        if not vector_store:
+            return "Error: Could not initialize vector store. Please check your Pinecone configuration."
         
         response_placeholder = st.empty()
         stream_handler = StreamHandler(response_placeholder)
         
         # Use vector store for similarity search
-        relevant_docs = st.session_state.vector_store.similarity_search(
+        relevant_docs = vector_store.similarity_search(
             query,
             k=4,  # Number of relevant documents to retrieve
         )
@@ -229,7 +273,7 @@ def generate_response(query, model_choice):
         context = "\n\n".join(doc.page_content for doc in relevant_docs)
         
         chat_model = ChatOpenAI(
-            model="gpt-4o",
+            model="gpt-4",
             temperature=st.session_state.get('temperature', 0.5),
             streaming=True,
             callbacks=[stream_handler]
@@ -324,3 +368,4 @@ if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
         full_response = generate_response(prompt, model_choice)
         if full_response:
             st.session_state.messages.append({"role": "assistant", "content": full_response}) 
+
