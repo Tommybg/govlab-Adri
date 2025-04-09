@@ -13,3 +13,4 @@ openai
 pinecone-client
 pypdf
 python-docx
+supabase
