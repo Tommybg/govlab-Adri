@@ -105,6 +105,8 @@ if 'vector_store' not in st.session_state:
     st.session_state.vector_store = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "system_prompt" not in st.session_state:
+    st.session_state.system_prompt = system_prompt
 
 # Function to create or get Pinecone index
 def get_or_create_pinecone_index(index_name="oportunidades-consultoria"):
@@ -273,13 +275,13 @@ def generate_response(query, model_choice):
         context = "\n\n".join(doc.page_content for doc in relevant_docs)
         
         chat_model = ChatOpenAI(
-            model="gpt-4",
+            model="gpt-4o",
             temperature=st.session_state.get('temperature', 0.5),
             streaming=True,
             callbacks=[stream_handler]
         )
         
-        formatted_system_prompt = system_prompt.format(context=context, query=query)
+        formatted_system_prompt = st.session_state.system_prompt.format(context=context, query=query)
         messages = [
             SystemMessage(content=formatted_system_prompt),
             HumanMessage(content=query)
@@ -303,6 +305,7 @@ st.write(css, unsafe_allow_html=True)
 # Sidebar
 with st.sidebar:
     model_choice = st.selectbox("Selecciona Modelo", ["OpenAI"])
+    
     uploaded_files = st.file_uploader(
         "Sube tus Documentos ACÁ", 
         type=["pdf", "csv", "txt", "xlsx", "docx"], 
@@ -331,6 +334,16 @@ with st.sidebar:
         st.session_state.messages = []
         st.success("¡Historial de chat borrado!")
     
+    # System prompt editor 
+    custom_prompt = st.text_area(
+        "Personaliza el Prompt del Sistema",
+        value=st.session_state.system_prompt,
+        height=00
+    )
+    if custom_prompt != st.session_state.system_prompt:
+        st.session_state.system_prompt = custom_prompt
+        st.success("¡Prompt del sistema actualizado!")
+
     # Temperature control
     temperature = st.slider(
         "Temperature", 
@@ -368,4 +381,3 @@ if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
         full_response = generate_response(prompt, model_choice)
         if full_response:
             st.session_state.messages.append({"role": "assistant", "content": full_response}) 
-
