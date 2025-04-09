@@ -338,7 +338,7 @@ with st.sidebar:
     custom_prompt = st.text_area(
         "Personaliza el Prompt del Sistema",
         value=st.session_state.system_prompt,
-        height=00
+        height=200
     )
     if custom_prompt != st.session_state.system_prompt:
         st.session_state.system_prompt = custom_prompt
