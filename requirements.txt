@@ -1,0 +1,15 @@
+langchain
+langchain-core
+langchain-openai
+langchain-text-splitters
+langchain-community
+langchain-pinecone
+docx2txt
+pydantic 
+protobuf
+streamlit
+python-dotenv
+openai
+pinecone-client
+pypdf
+python-docx
